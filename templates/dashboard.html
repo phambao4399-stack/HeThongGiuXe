@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCADA Dashboard - Smart Parking</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .cam-stream { width: 100%; height: auto; max-height: 360px; object-fit: cover; background: #000; border-radius: 8px; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: none; margin-bottom: 20px; }
+        .table-responsive { scrollbar-width: thin; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold" href="#">🚗 HỆ THỐNG GIỮ XE THÔNG MINH - SCADA</a>
+        <div class="d-flex align-items-center">
+            <span class="text-light me-3">Xin chào, <strong>{{ username }}</strong></span>
+            <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 Đăng xuất</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid px-4">
+    <div class="row">
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-primary text-white"><div class="card-body"><h6>SỐ XE TRONG BÃI</h6><h2 id="stat_inside">0</h2></div></div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-success text-white"><div class="card-body"><h6>LƯỢT VÀO HÔM NAY</h6><h2 id="stat_in_today">0</h2></div></div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-warning text-dark"><div class="card-body"><h6>DOANH THU VÉ LƯỢT</h6><h2 id="stat_revenue">0đ</h2></div></div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-info text-white"><div class="card-body"><h6>SỐ CHỖ CÒN TRỐNG</h6><h2 id="stat_empty">20</h2></div></div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-7">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-secondary text-white fw-bold">📹 CAMERA CỔNG VÀO</div>
+                        <div class="card-body text-center p-2">
+                            <img src="{{ url_for('video_feed_in') }}" class="cam-stream" alt="Cam Vào">
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-secondary text-white fw-bold">📹 CAMERA CỔNG RA</div>
+                        <div class="card-body text-center p-2">
+                            <img src="{{ url_for('video_feed_out') }}" class="cam-stream" alt="Cam Ra">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+                    <span>📜 LỊCH SỬ RA VÀO GẦN ĐÂY</span>
+                    <button class="btn btn-sm btn-danger fw-bold" onclick="clearAllLogs()">🗑️ Xóa sạch lịch sử</button>
+                </div>
+                <div class="card-body p-0 table-responsive">
+                    <table class="table table-striped table-hover mb-0 text-center align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Thời gian</th>
+                                <th>Cổng</th>
+                                <th>Mã UID</th>
+                                <th>Biển số OCR</th>
+                                <th>Chi tiết / Phí</th>
+                                <th>Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table_logs">
+                            <tr><td colspan="6">Đang tải dữ liệu...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white fw-bold">🪪 ĐĂNG KÝ HỒ SƠ CƯ DÂN (VÉ THÁNG)</div>
+                <div class="card-body">
+                    <form id="regCardForm">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Mã thẻ UID (Quẹt thẻ để lấy mã)</label>
+                            <input type="text" class="form-control" id="reg_uid" placeholder="VD: 1A2B3C4D" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Họ tên Cư Dân / Chủ xe</label>
+                            <input type="text" class="form-control" id="reg_name" placeholder="Nhập tên cư dân" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold">Biển số xe</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="reg_plate" placeholder="Bấm Quét AI để tự điền" required>
+                                <button class="btn btn-warning fw-bold" type="button" onclick="scanPlateFromCam()">📷 Quét AI</button>
+                            </div>
+                            <small class="text-muted">Đỗ xe trước Cam VÀO và bấm Quét để trích xuất biển số tự động.</small>
+                        </div>
+
+                        <input type="hidden" id="reg_type" value="VÉ THÁNG">
+                        <input type="hidden" id="reg_status" value="Hoạt động">
+
+                        <button type="button" class="btn btn-success w-100 fw-bold py-2" onclick="submitCardSave()">💾 LƯU HỒ SƠ CƯ DÂN</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-info text-dark fw-bold">DANH SÁCH THẺ TRONG HỆ THỐNG</div>
+                <div class="card-body p-0 table-responsive" style="max-height: 280px; overflow-y: auto;">
+                    <table class="table table-bordered text-center align-middle mb-0">
+                        <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                            <tr>
+                                <th>UID</th>
+                                <th>Chủ xe</th>
+                                <th>Biển số</th>
+                                <th>Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table_cards">
+                            <tr><td colspan="4">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- HÀM TƯƠNG TÁC CAMERA & FORM ---
+function scanPlateFromCam() {
+    const input = document.getElementById('reg_plate');
+    const oldVal = input.value;
+    input.value = "⏳ Đang trích xuất...";
+    input.disabled = true;
+    fetch('/api/card/scan_cam')
+        .then(res => res.json())
+        .then(data => {
+            input.disabled = false;
+            if (data.success) { 
+                input.value = data.plate; 
+                alert("✅ AI đọc thành công: " + data.plate); 
+            } else { 
+                input.value = oldVal; 
+                alert("❌ Lỗi: " + data.msg); 
+            }
+        })
+        .catch(err => { 
+            input.disabled = false; 
+            input.value = oldVal; 
+            alert("❌ Lỗi Server!"); 
+        });
+}
+
+function submitCardSave() {
+    const uid = document.getElementById('reg_uid').value.trim();
+    const name = document.getElementById('reg_name').value.trim();
+    const plate = document.getElementById('reg_plate').value.trim();
+    const type = document.getElementById('reg_type').value;
+    const status = document.getElementById('reg_status').value;
+    
+    if (!uid || !plate) { 
+        alert("Vui lòng nhập đầy đủ UID và Biển số!"); 
+        return; 
+    }
+    
+    fetch('/api/card/save', {
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({uid, name, plate, type, status})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) { 
+            alert("🎉 " + data.msg); 
+            document.getElementById('regCardForm').reset(); 
+            loadCards(); 
+        } else {
+            alert("❌ " + data.msg);
+        }
+    });
+}
+
+function deleteCard(uid) {
+    if (!confirm("Xóa thẻ " + uid + " khỏi hệ thống?")) return;
+    fetch('/api/card/delete/' + uid, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(() => loadCards());
+}
+
+// --- HÀM HỖ TRỢ XÓA LỊCH SỬ AJAX ---
+function deleteLog(id) {
+    if (!confirm("Xóa dòng lịch sử này?")) return;
+    fetch('/api/log/delete/' + id, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) loadDashboardData();
+            else alert("❌ " + data.msg);
+        });
+}
+
+function clearAllLogs() {
+    if (!confirm("⚠️ NGUY HIỂM: Bạn chắc chắn muốn xóa SẠCH toàn bộ lịch sử ra vào?")) return;
+    fetch('/api/log/clear', { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) { 
+                alert("🎉 " + data.msg); 
+                loadDashboardData(); 
+            } else alert("❌ " + data.msg);
+        });
+}
+
+// --- HÀM CẬP NHẬT GIAO DIỆN SCADA ---
+function loadDashboardData() {
+    fetch('/api/logs')
+        .then(res => res.json())
+        .then(logs => {
+            let html = '';
+            logs.forEach(l => {
+                let gateBadge = l.gate_id === 'GATE_IN' ? '<span class="badge bg-primary">VÀO</span>' : '<span class="badge bg-danger">RA</span>';
+                let rowClass = l.result === 'denied' ? 'table-danger' : '';
+                html += `<tr class="${rowClass}">
+                    <td>${l.time_in}</td>
+                    <td>${gateBadge}</td>
+                    <td class="fw-bold">${l.rfid_uid}</td>
+                    <td class="text-success fw-bold">${l.plate_in}</td>
+                    <td><small>${l.warning_flag}</small></td>
+                    <td><button class="btn btn-sm btn-outline-danger" onclick="deleteLog(${l.id})" title="Xóa log">❌</button></td>
+                </tr>`;
+            });
+            document.getElementById('table_logs').innerHTML = html || '<tr><td colspan="6">Chưa có dữ liệu lịch sử</td></tr>';
+        });
+
+    fetch('/api/stats')
+        .then(res => res.json())
+        .then(s => {
+            document.getElementById('stat_inside').innerText = s.inside;
+            document.getElementById('stat_in_today').innerText = s.in_today;
+            document.getElementById('stat_revenue').innerText = s.revenue.toLocaleString() + 'đ';
+            document.getElementById('stat_empty').innerText = s.empty;
+        });
+}
+
+// Tối ưu hóa DOM giúp tránh giật thanh cuộn khi Load ngầm định kỳ
+function loadCards() {
+    fetch('/api/cards')
+        .then(res => res.json())
+        .then(cards => {
+            let html = '';
+            cards.forEach(c => {
+                let plateBadge = c.type === 'VÉ LƯỢT' ? 'bg-secondary' : 'bg-success';
+                html += `<tr>
+                    <td class="fw-bold">${c.uid}</td>
+                    <td>${c.name}</td>
+                    <td><span class="badge ${plateBadge}">${c.plate}</span></td>
+                    <td><button class="btn btn-sm btn-outline-danger" onclick="deleteCard('${c.uid}')">Xóa</button></td>
+                </tr>`;
+            });
+            const tbody = document.getElementById('table_cards');
+            if (tbody.innerHTML !== html) {
+                tbody.innerHTML = html || '<tr><td colspan="4">Hệ thống chưa có thẻ đăng ký</td></tr>';
+            }
+        });
+}
+
+// --- KHỞI ĐỘNG & BỘ ĐẾM POLLING ĐỒNG BỘ ---
+loadCards(); 
+loadDashboardData();
+
+// Tự động làm mới đồng thời cả Bảng Lịch Sử và Bảng Thẻ mỗi 2 giây
+setInterval(() => {
+    loadDashboardData();
+    loadCards();
+}, 2000);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.css"></script>
+</body>
+</html>
